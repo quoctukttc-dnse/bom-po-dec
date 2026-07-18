@@ -12,8 +12,6 @@ data/               ← master data nhúng sẵn (.json.gz)
   colors.json.gz    ← Color Library
   generic.json.gz   ← Material Items (Generic)
   sku.json.gz       ← Material Items (SKU)
-  customers.json.gz ← Khách hàng
-  suppliers.json.gz ← Supplier Profile
   ms.json.gz        ← Danh sách MS
   deca_fix.json.gz  ← DS làm sạch model code khỏi màu TP — 895 cặp (product, model)
 ```
@@ -82,3 +80,16 @@ Các dòng đã làm sạch được liệt kê ở tab/sheet báo cáo «Đã l
 - Import PO — cột màu: mọi trường hợp đều điền **tên màu (color name)**.
   Khớp chuẩn hoá → nguyên văn «Màu MỚI»; ngoài chuẩn hoá → tên màu dò được
   trong Color Library (mã màu chỉ ghi trong báo cáo/kiểm SKU, không điền vào file).
+- Màu NPL (cả PO lẫn BOM): trước khi điền, **tách số labdip đứng đầu** khỏi tên màu
+  («4709795 N07A BLACK» → «N07A BLACK») — kể cả khi «Màu MỚI» trong danh sách chuẩn hoá
+  còn giữ số (nhóm «Giữ nguyên»). Tên màu chỉ là số (vd «25009839») thì giữ nguyên.
+
+## Ghi chú bản cập nhật 18/07 (tối) — đơn giản hoá
+
+- BỎ master Khách hàng và Supplier Profile cùng toàn bộ logic kiểm khách/NCC khi map
+  Item (tool chuyên cho Decathlon). Map ScaX → ScaF giờ chỉ ưu tiên code APPROVE,
+  không block, chưa chạm giới hạn 999 SKU; nhiều ứng viên thì ghi chú để rà tay.
+- Mã hàng có «Manage By Color = False» trong Material Items → KHÔNG điền ColorItem
+  (cả PO lẫn BOM), có ô đếm «Không quản lý màu (bỏ qua)» trong kết quả.
+- ColorItem luôn là TÊN màu (color name) ở mọi nhánh — không bao giờ điền color code.
+- Master Material Items cập nhật bản PRD 20260718 (Generic 56.661 / SKU 373.654).
