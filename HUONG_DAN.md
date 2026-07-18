@@ -7,7 +7,7 @@ index.html          ← giao diện
 app.js              ← toàn bộ logic
 libs/               ← 3 thư viện JS (xlsx, exceljs, pako)
 data/               ← master data nhúng sẵn (.json.gz)
-  deca_npl.json.gz  ← Chuẩn hoá NPL (Mau_cu_Mau_moi) — 4.958 dòng
+  deca_npl.json.gz  ← Chuẩn hoá NPL (Mau_cu_Mau_moi, bản DAYDU 17/07) — 10.154 dòng
   deca_tp.json.gz   ← Chuẩn hoá Thành phẩm — 7.922 dòng
   colors.json.gz    ← Color Library
   generic.json.gz   ← Material Items (Generic)
@@ -73,3 +73,12 @@ cột E = Model code). Khi xử lý file BOM:
 - Chỉ loại model code đăng ký cho đúng product code đó — không đụng số khác.
 
 Các dòng đã làm sạch được liệt kê ở tab/sheet báo cáo «Đã làm sạch model code».
+
+## Ghi chú bản cập nhật 18/07 (chiều)
+
+- Danh mục chuẩn hoá NPL dùng bản **DAYDU 20260717** (10.154 dòng). Bộ nạp
+  (cả admin upload) đọc theo **tên cột** nên chấp nhận cả layout cũ 11 cột
+  lẫn layout mới có thêm «Đổi màu?», «Đổi size?», «Có trong Do SKU?».
+- Import PO — cột màu: mọi trường hợp đều điền **tên màu (color name)**.
+  Khớp chuẩn hoá → nguyên văn «Màu MỚI»; ngoài chuẩn hoá → tên màu dò được
+  trong Color Library (mã màu chỉ ghi trong báo cáo/kiểm SKU, không điền vào file).

@@ -490,10 +490,11 @@ function processPORow(g) {
         return { code, name: DATA.colors[i][1], len: IDX.colorTight[i].length, hasSku: skuMap && skuMap.has(code) ? 1 : 0 };
       }).sort((a, b) => (b.len - a.len) || (b.hasSku - a.hasSku));
       if (cands.length) {
+        // Điền TÊN màu (color name) — mã màu chỉ dùng nội bộ để kiểm SKU và ghi trong báo cáo
         res.mauMoi = cands[0].code;
         res.colorSource = "master";
-        res.fills.ColorItem = cands[0].code;
-        res.status.push("⚠ Ngoài chuẩn hoá (" + why + ") — dò Color Library: " + cands[0].code + " (" + cands[0].name + ")");
+        res.fills.ColorItem = cands[0].name;
+        res.status.push("⚠ Ngoài chuẩn hoá (" + why + ") — dò Color Library: " + cands[0].name + " [mã " + cands[0].code + "]");
       } else {
         res.colorNotFound = true;
         res.status.push("✗ Ngoài chuẩn hoá (" + why + ") và KHÔNG dò được trong Color Library — để trống");
@@ -972,8 +973,19 @@ if (typeof document !== "undefined") {
       const truthy = v => ["true", "1", "yes"].includes(String(v).trim().toLowerCase()) ? 1 : 0;
       if (masterKind === "deca_npl") {
         const sheet = wb.SheetNames.includes("Mau_cu_Mau_moi") ? "Mau_cu_Mau_moi" : wb.SheetNames[0];
-        const rows = aoa(sheet).slice(1).map(r => [cs(r[0]), cs(r[1]), cs(r[2]), cs(r[3]), cs(r[4]), cs(r[5]), cs(r[6]), cs(r[7]), cs(r[8]), cs(r[9]), cs(r[10])]).filter(r => r[0] || r[1] || r[2]);
-        if (!rows.length) throw new Error("Không có dữ liệu chuẩn hoá NPL (cần sheet Mau_cu_Mau_moi: Code ScaX, Code ScaF cũ, Code ScaF final, Màu CŨ, Màu MỚI, Size CŨ, Size MỚI, Kiểu xử lý, DSM, Model, Item)");
+        const all = aoa(sheet);
+        // Đọc theo TÊN CỘT (hỗ trợ cả layout cũ 11 cột lẫn layout mới có Đổi màu?/Đổi size?/Có trong Do SKU?)
+        const hdr = (all[0] || []).map(h => tight(stripVN(h)));
+        const col = (...names) => {
+          for (const n of names) { const i = hdr.indexOf(n); if (i >= 0) return i; }
+          for (const n of names) { const i = hdr.findIndex(h => h.indexOf(n) === 0); if (i >= 0) return i; }
+          return -1;
+        };
+        const C = [col("CODESCAX"), col("CODESCAFCU"), col("CODESCAFDUNG", "CODESCAFDUNGFINAL", "CODESCAF"),
+          col("MAUCU"), col("MAUMOI"), col("SIZECU"), col("SIZEMOI"), col("KIEUXULY"), col("DSM"), col("MODEL"), col("ITEM")];
+        if (C.slice(0, 5).some(i => i < 0)) throw new Error("Không tìm thấy đủ cột (cần: Code ScaX, Code ScaF cũ, Code ScaF (dùng), Màu CŨ, Màu MỚI; tuỳ chọn: Size CŨ/MỚI, Kiểu xử lý, DSM, Model, Item)");
+        const rows = all.slice(1).map(r => C.map(i => i >= 0 ? cs(r[i]) : "")).filter(r => r[0] || r[1] || r[2]);
+        if (!rows.length) throw new Error("Không có dữ liệu chuẩn hoá NPL trong sheet «" + sheet + "»");
         await idbSet("deca_npl", { rows, date: today }); DATA.deca_npl = rows; DATA.sources.deca_npl = "Upload " + today;
       } else if (masterKind === "deca_tp") {
         const sheet = wb.SheetNames.find(n => tight(n).includes("CHUANHOA")) || wb.SheetNames[0];
