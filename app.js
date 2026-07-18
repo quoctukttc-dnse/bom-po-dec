@@ -40,8 +40,8 @@ function leadNum(s) {
 }
 
 /* ---------------- Dữ liệu & chỉ mục ---------------- */
-const DATA = { colors: null, generic: null, sku: null, customers: null, suppliers: null, ms: null, deca_npl: null, deca_tp: null, meta: null, sources: {} };
-const MASTER_KEYS = ["colors", "generic", "sku", "customers", "suppliers", "ms", "deca_npl", "deca_tp"];
+const DATA = { colors: null, generic: null, sku: null, customers: null, suppliers: null, ms: null, deca_npl: null, deca_tp: null, deca_fix: null, meta: null, sources: {} };
+const MASTER_KEYS = ["colors", "generic", "sku", "customers", "suppliers", "ms", "deca_npl", "deca_tp", "deca_fix"];
 const IDX = {};
 const GRAM = 4;
 
@@ -157,6 +157,40 @@ function buildIndexes() {
       if (!arr.includes(e)) arr.push(e);
     }
   });
+  // ===== DANH SÁCH LÀM SẠCH MODEL CODE KHỎI MÀU TP =====
+  // row: [productCode, modelCode]
+  IDX.fixByProd = new Map();
+  (DATA.deca_fix || []).forEach(r => {
+    const p = cleanCode(r[0]), m = cleanCode(r[1]);
+    if (!p || !m) return;
+    let s = IDX.fixByProd.get(p);
+    if (!s) IDX.fixByProd.set(p, s = new Set());
+    s.add(m);
+  });
+}
+
+/* ---------------- Làm sạch model code khỏi chuỗi màu TP ----------------
+ * Chỉ loại các model code có trong danh sách của đúng product code đó.
+ * Trả về {cleaned, removed:[model...]} — cleaned === chuỗi gốc nếu không có gì để loại */
+function cleanModelFromColor(prodCodes, colorStr) {
+  const s0 = String(colorStr == null ? "" : colorStr);
+  if (!s0.trim()) return { cleaned: s0, removed: [] };
+  const models = new Set();
+  for (const p of prodCodes) {
+    const set = IDX.fixByProd.get(cleanCode(p));
+    if (set) set.forEach(m => models.add(m));
+  }
+  if (!models.size) return { cleaned: s0, removed: [] };
+  let s = s0;
+  const removed = [];
+  for (const m of models) {
+    // loại model code đứng riêng (không dính vào số dài hơn), kèm dấu nối/ngoặc dư
+    const re = new RegExp("[\\s\\-_/\\.]*(?<!\\d)" + m + "(?!\\d)[\\s\\-_/\\.]*", "g");
+    if (re.test(s)) { s = s.replace(re, " "); removed.push(m); }
+  }
+  if (!removed.length) return { cleaned: s0, removed: [] };
+  s = s.replace(/\s+/g, " ").replace(/^[\s\-_/\.]+|[\s\-_/\.]+$/g, "").trim();
+  return { cleaned: s, removed };
 }
 
 /* ---------------- Matcher chuẩn hoá dùng chung ----------------
@@ -512,7 +546,7 @@ function processBOMRow(g) {
   const res = {
     fills: {}, status: [],
     tpOutOfList: false, nplOutOfList: false, sizeOutOfList: false,
-    itemNotMapped: false, prodSizeMissing: []
+    itemNotMapped: false, prodSizeMissing: [], modelCleaned: false
   };
   // ===== THÀNH PHẨM =====
   const prodOld = cleanCode(g.ProductCodeOld);
@@ -520,11 +554,19 @@ function processBOMRow(g) {
   let tp = null;
   if (prodOld) {
     tp = matchTP(prodOld, colorProdOld);
+    const prodKeys = [prodOld, cleanCode(g.ProductCode), tp.inList ? tp.code : ""].filter(Boolean);
     if (tp.inList) {
       if (tp.code && !cleanCode(g.ProductCode)) { res.fills.ProductCode = tp.code; res.status.push("ProductCode chuẩn hoá: " + tp.code); }
       if (colorProdOld && tp.mauMoi) {
-        res.fills.ColorProduct = tp.mauMoi;
-        res.status.push("Màu TP chuẩn hoá (" + tp.level + "): " + tp.mauMoi + (tp.colorCode ? " [ColorCode " + tp.colorCode + "]" : ""));
+        // Làm sạch model code (danh sách "loại model code ra khỏi màu") trên giá trị Màu MỚI
+        const fx = cleanModelFromColor(prodKeys, tp.mauMoi);
+        res.fills.ColorProduct = fx.cleaned;
+        if (fx.removed.length) {
+          res.modelCleaned = true;
+          res.status.push("Màu TP chuẩn hoá (" + tp.level + ") + LÀM SẠCH model code " + fx.removed.join(", ") + ": «" + tp.mauMoi + "» → «" + fx.cleaned + "»" + (tp.colorCode ? " [ColorCode " + tp.colorCode + "]" : ""));
+        } else {
+          res.status.push("Màu TP chuẩn hoá (" + tp.level + "): " + tp.mauMoi + (tp.colorCode ? " [ColorCode " + tp.colorCode + "]" : ""));
+        }
       }
       // ProductSize: chỉ kiểm tra, không sửa
       const psRaw = String(g.ProductSize || "").trim();
@@ -533,11 +575,19 @@ function processBOMRow(g) {
         if (missing.length) { res.prodSizeMissing = missing; res.status.push("⚠ Size TP ngoài chuẩn hoá: " + missing.join(", ")); }
       }
     } else if (colorProdOld) {
-      res.tpOutOfList = true;
-      const why = tp.reason === "AMBIGUOUS" ? "nhiều màu mới ứng viên: " + (tp.mauMoiSet || []).join(" | ")
-        : tp.reason === "PRODUCT_NOT_IN_LIST" ? "mã TP không có trong danh sách chuẩn hoá"
-          : "màu không có trong danh sách chuẩn hoá";
-      res.status.push("✗ Màu TP ngoài chuẩn hoá (" + why + ") — để trống ColorProduct");
+      // Ngoài chuẩn hoá: nếu product code nằm trong danh sách làm sạch và màu chứa model code → làm sạch rồi điền luôn
+      const fx = cleanModelFromColor(prodKeys, String(g.ColorProductOld || "").trim() || colorProdOld);
+      if (fx.removed.length) {
+        res.modelCleaned = true;
+        res.fills.ColorProduct = fx.cleaned;
+        res.status.push("LÀM SẠCH model code " + fx.removed.join(", ") + " (ngoài chuẩn hoá): «" + colorProdOld + "» → «" + fx.cleaned + "» — đã điền ColorProduct");
+      } else {
+        res.tpOutOfList = true;
+        const why = tp.reason === "AMBIGUOUS" ? "nhiều màu mới ứng viên: " + (tp.mauMoiSet || []).join(" | ")
+          : tp.reason === "PRODUCT_NOT_IN_LIST" ? "mã TP không có trong danh sách chuẩn hoá"
+            : "màu không có trong danh sách chuẩn hoá";
+        res.status.push("✗ Màu TP ngoài chuẩn hoá (" + why + ") — để trống ColorProduct");
+      }
     }
   }
   // ===== NGUYÊN PHỤ LIỆU =====
@@ -656,6 +706,7 @@ if (typeof document !== "undefined") {
       st.innerHTML =
         '<span class="pill ok">Chuẩn hoá NPL: ' + DATA.deca_npl.length.toLocaleString() + " dòng</span>" +
         '<span class="pill ok">Chuẩn hoá TP: ' + DATA.deca_tp.length.toLocaleString() + " dòng</span>" +
+        '<span class="pill ok">Làm sạch model code: ' + DATA.deca_fix.length.toLocaleString() + " cặp</span>" +
         '<span class="pill ok">Color Library: ' + DATA.colors.length.toLocaleString() + " màu</span>" +
         '<span class="pill ok">Generic: ' + DATA.generic.length.toLocaleString() + " code</span>" +
         '<span class="pill ok">SKU: ' + DATA.sku.length.toLocaleString() + " dòng</span>" +
@@ -769,10 +820,11 @@ if (typeof document !== "undefined") {
 
   /* ---------- Tổng hợp báo cáo ---------- */
   function agg() {
-    const skuNew = new Map(), colorOut = [], sizeOut = [], msIssues = [], newCode = [], tpOut = [], itemFail = [];
+    const skuNew = new Map(), colorOut = [], sizeOut = [], msIssues = [], newCode = [], tpOut = [], itemFail = [], cleaned = [];
     for (const r of results) {
       if (r.msStatus === "NOTFOUND" || r.msStatus === "AMBIGUOUS") msIssues.push(r);
       if (r.needNewCode || r.itemNotMapped) newCode.push(r);
+      if (r.modelCleaned) cleaned.push(r);
       if (r.skuMissing) {
         const k = (r.fills.Item || r.item) + "|" + (r.skuColorCodes || []).join(",");
         if (!skuNew.has(k)) skuNew.set(k, { item: r.fills.Item || r.item, mauMoi: r.mauMoi, codes: (r.skuColorCodes || []).join(", "), rows: [] });
@@ -782,7 +834,7 @@ if (typeof document !== "undefined") {
       if (r.tpOutOfList) tpOut.push(r);
       if (r.sizeOutOfList || (r.prodSizeMissing && r.prodSizeMissing.length)) sizeOut.push(r);
     }
-    return { skuNew: [...skuNew.values()], colorOut, sizeOut, msIssues, newCode, tpOut, itemFail };
+    return { skuNew: [...skuNew.values()], colorOut, sizeOut, msIssues, newCode, tpOut, itemFail, cleaned };
   }
 
   function renderResults() {
@@ -794,11 +846,13 @@ if (typeof document !== "undefined") {
       '<div class="sumbox"><b style="color:var(--ok)">' + okCnt + "</b><span>Khớp chuẩn hoá đầy đủ</span></div>" +
       '<div class="sumbox"><b style="color:var(--err)">' + a.colorOut.length + "</b><span>Màu NPL ngoài chuẩn hoá</span></div>" +
       (fileKind === "BOM" ? '<div class="sumbox"><b style="color:var(--err)">' + a.tpOut.length + "</b><span>Màu TP ngoài chuẩn hoá</span></div>" : "") +
+      (fileKind === "BOM" ? '<div class="sumbox"><b style="color:var(--warn)">' + a.cleaned.length + "</b><span>Đã làm sạch model code</span></div>" : "") +
       '<div class="sumbox"><b style="color:var(--warn)">' + a.sizeOut.length + "</b><span>Size ngoài chuẩn hoá</span></div>" +
       (fileKind === "PO" ? '<div class="sumbox"><b style="color:var(--warn)">' + a.skuNew.length + "</b><span>SKU cần tạo</span></div>" : "") +
       (fileKind === "PO" ? '<div class="sumbox"><b style="color:var(--warn)">' + a.msIssues.length + "</b><span>MS cần kiểm tra</span></div>" : "") +
       (a.newCode.length ? '<div class="sumbox"><b style="color:var(--err)">' + a.newCode.length + "</b><span>Không map được Item</span></div>" : "");
     document.getElementById("tabTP").style.display = fileKind === "BOM" ? "" : "none";
+    document.getElementById("tabClean").style.display = fileKind === "BOM" ? "" : "none";
     document.getElementById("tabSKU").style.display = fileKind === "PO" ? "" : "none";
     document.getElementById("tabMS").style.display = fileKind === "PO" ? "" : "none";
     showResultTable(document.querySelector('#resultTabs button[data-rt="all"]'));
@@ -825,6 +879,9 @@ if (typeof document !== "undefined") {
     } else if (kind === "colorout") {
       t.innerHTML = "<tr><th>Dòng</th><th>OldItem</th><th>Màu NPL cũ</th><th>Lý do / fallback</th></tr>" +
         a.colorOut.map(r => "<tr><td>" + r.rowNum + "</td><td>" + esc(r.oldItem) + "</td><td>" + esc(r.colorOld) + "</td><td>" + esc(r.status.join(" · ")) + "</td></tr>").join("");
+    } else if (kind === "cleaned") {
+      t.innerHTML = "<tr><th>Dòng</th><th>TP cũ</th><th>Màu TP cũ</th><th>ColorProduct đã điền</th><th>Chi tiết</th></tr>" +
+        a.cleaned.map(r => "<tr><td>" + r.rowNum + "</td><td>" + esc(r.prodOld) + "</td><td>" + esc(r.colorProdOld) + "</td><td>" + esc(r.fills.ColorProduct || "") + "</td><td>" + esc(r.status.join(" · ")) + "</td></tr>").join("");
     } else if (kind === "tpout") {
       t.innerHTML = "<tr><th>Dòng</th><th>TP cũ</th><th>Màu TP cũ</th><th>Lý do</th></tr>" +
         a.tpOut.map(r => "<tr><td>" + r.rowNum + "</td><td>" + esc(r.prodOld) + "</td><td>" + esc(r.colorProdOld) + "</td><td>" + esc(r.status.join(" · ")) + "</td></tr>").join("");
@@ -878,6 +935,8 @@ if (typeof document !== "undefined") {
       add("Tong hop", ["Dòng", "TP cũ", "Màu TP cũ", "ColorProduct điền", "OldItem", "Item điền", "Màu NPL cũ", "ColorItem điền", "RMSize điền", "Trạng thái"],
         results.map(r => [r.rowNum, r.prodOld, r.colorProdOld, r.fills.ColorProduct || "", r.oldItem, r.fills.Item || "", r.colorOld, r.fills.ColorItem || "", r.fills.RMSize || "", r.status.join(" · ")]));
       add("Mau TP ngoai chuan hoa", ["Dòng", "TP cũ", "Màu TP cũ", "Ghi chú"], a.tpOut.map(r => [r.rowNum, r.prodOld, r.colorProdOld, r.status.join(" · ")]));
+      add("Da lam sach model code", ["Dòng", "TP cũ", "Màu TP cũ", "ColorProduct đã điền", "Chi tiết"],
+        a.cleaned.map(r => [r.rowNum, r.prodOld, r.colorProdOld, r.fills.ColorProduct || "", r.status.join(" · ")]));
       add("Mau NPL ngoai chuan hoa", ["Dòng", "OldItem", "Màu NPL cũ", "Ghi chú"], a.colorOut.map(r => [r.rowNum, r.oldItem, r.colorOld, r.status.join(" · ")]));
       add("Size ngoai chuan hoa", ["Dòng", "Mã hàng", "Size", "Ghi chú"], a.sizeOut.map(r => [r.rowNum, r.oldItem || r.prodOld, r.sizeOld + ((r.prodSizeMissing || []).length ? " / TP: " + r.prodSizeMissing.join(",") : ""), r.status.join(" · ")]));
       add("Khong map duoc Item", ["Dòng", "OldItem", "Ghi chú"], a.newCode.map(r => [r.rowNum, r.oldItem, r.status.join(" · ")]));
@@ -890,6 +949,7 @@ if (typeof document !== "undefined") {
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     set("srcNpl", DATA.sources.deca_npl || "—"); set("cntNpl", DATA.deca_npl ? DATA.deca_npl.length.toLocaleString() : "—");
     set("srcTp", DATA.sources.deca_tp || "—"); set("cntTp", DATA.deca_tp ? DATA.deca_tp.length.toLocaleString() : "—");
+    set("srcFix", DATA.sources.deca_fix || "—"); set("cntFix", DATA.deca_fix ? DATA.deca_fix.length.toLocaleString() : "—");
     set("srcColors", DATA.sources.colors || "—"); set("cntColors", DATA.colors ? DATA.colors.length.toLocaleString() : "—");
     set("srcItems", DATA.sources.generic || "—"); set("cntItems", DATA.generic ? (DATA.generic.length.toLocaleString() + " / SKU " + DATA.sku.length.toLocaleString()) : "—");
     set("srcCust", DATA.sources.customers || "—"); set("cntCust", DATA.customers ? DATA.customers.length.toLocaleString() : "—");
@@ -920,6 +980,18 @@ if (typeof document !== "undefined") {
         const rows = aoa(sheet).slice(1).map(r => [cs(r[0]), cs(r[1]), cs(r[2]), cs(r[3]), cs(r[4]), cs(r[5]), cs(r[6]), cs(r[7]), cs(r[8])]).filter(r => r[0]);
         if (!rows.length) throw new Error("Không có dữ liệu chuẩn hoá TP (cần cột: Code ScaF, Generic code, Mô tả, Màu CŨ, Màu MỚI, Size CŨ, Size MỚI, ColorCode, SkuCode)");
         await idbSet("deca_tp", { rows, date: today }); DATA.deca_tp = rows; DATA.sources.deca_tp = "Upload " + today;
+      } else if (masterKind === "deca_fix") {
+        // Gộp TẤT CẢ các sheet: cột C = Product code (F...), cột E = Model code (số)
+        const rows = [];
+        const seenPair = new Set();
+        for (const sn of wb.SheetNames) {
+          for (const r of aoa(sn)) {
+            const p = cs(r[2]), m = cs(r[4]);
+            if (/^F\d+$/.test(p) && /^\d{5,}$/.test(m) && !seenPair.has(p + "|" + m)) { seenPair.add(p + "|" + m); rows.push([p, m]); }
+          }
+        }
+        if (!rows.length) throw new Error("Không có dữ liệu (cần cột C = Product code dạng F..., cột E = Model code, dữ liệu từ dòng 3, gộp mọi sheet)");
+        await idbSet("deca_fix", { rows, date: today }); DATA.deca_fix = rows; DATA.sources.deca_fix = "Upload " + today;
       } else if (masterKind === "colors") {
         const sheet = wb.SheetNames.includes("PRD") ? "PRD" : wb.SheetNames[0];
         const rows = aoa(sheet).slice(1).filter(r => cs(r[0]) && cs(r[1])).map(r => [cs(r[0]), cs(r[1])]);
@@ -990,6 +1062,6 @@ if (typeof module !== "undefined") {
   module.exports = {
     norm, tight, stripVN, cleanCode, extractNums, leadNum, DATA, IDX, buildIndexes,
     matchNPL, matchTP, matchColorRows, resolveSize, mapItem, matchMS, custKeyFromPO,
-    findColorCandidates, skuCheck, processPORow, processBOMRow
+    findColorCandidates, skuCheck, processPORow, processBOMRow, cleanModelFromColor
   };
 }

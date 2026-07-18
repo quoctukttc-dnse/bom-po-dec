@@ -82,6 +82,7 @@ code{background:#eef2f8;padding:1px 5px;border-radius:4px;font-size:12px}
           <button class="active" data-rt="all" onclick="showResultTable(this)">Tất cả dòng</button>
           <button data-rt="colorout" onclick="showResultTable(this)">Màu NPL ngoài chuẩn hoá</button>
           <button data-rt="tpout" id="tabTP" onclick="showResultTable(this)">Màu TP ngoài chuẩn hoá</button>
+          <button data-rt="cleaned" id="tabClean" onclick="showResultTable(this)">Đã làm sạch model code</button>
           <button data-rt="sizeout" onclick="showResultTable(this)">Size ngoài chuẩn hoá</button>
           <button data-rt="sku" id="tabSKU" onclick="showResultTable(this)">SKU cần tạo</button>
           <button data-rt="ms" id="tabMS" onclick="showResultTable(this)">MS cần kiểm tra</button>
@@ -105,6 +106,9 @@ code{background:#eef2f8;padding:1px 5px;border-radius:4px;font-size:12px}
         <tr><td><b>Chuẩn hoá Thành phẩm Decathlon</b> (Code ScaF, Generic code, Mô tả SP, Màu CŨ, Màu MỚI, Size CŨ, Size MỚI, ColorCode, SkuCode)</td>
             <td>Decathlon chuẩn hoá màu size.xlsx</td><td id="srcTp">—</td><td id="cntTp">—</td>
             <td><button class="btn secondary" onclick="pickMaster('deca_tp')">Upload mới</button></td></tr>
+        <tr><td><b>DS làm sạch model code khỏi màu TP</b> (mọi sheet: cột C = Product code, cột E = Model code)</td>
+            <td>List Product code cần chỉnh lại loại model code ra khỏi màu.xlsx</td><td id="srcFix">—</td><td id="cntFix">—</td>
+            <td><button class="btn secondary" onclick="pickMaster('deca_fix')">Upload mới</button></td></tr>
         <tr><td>Color Library (sheet <code>PRD</code>: Code, Name)</td><td>Color Library 20260714.xlsx</td><td id="srcColors">—</td><td id="cntColors">—</td>
             <td><button class="btn secondary" onclick="pickMaster('colors')">Upload mới</button></td></tr>
         <tr><td>Material Items (sheet <code>Generic</code> + <code>SKU</code>)</td><td>Material Items List PRD 20260714.xlsx</td><td id="srcItems">—</td><td id="cntItems">—</td>

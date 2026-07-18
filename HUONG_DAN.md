@@ -15,6 +15,7 @@ data/               ← master data nhúng sẵn (.json.gz)
   customers.json.gz ← Khách hàng
   suppliers.json.gz ← Supplier Profile
   ms.json.gz        ← Danh sách MS
+  deca_fix.json.gz  ← DS làm sạch model code khỏi màu TP — 895 cặp (product, model)
 ```
 
 Cách deploy: tạo repo GitHub mới (hoặc đè lên repo cũ) → upload toàn bộ →
@@ -57,3 +58,18 @@ MS cần kiểm tra (PO) · Không map được Item.
 Tab **Cập nhật Master Data** → Upload file .xlsx đúng cấu trúc → dữ liệu lưu
 trong trình duyệt (IndexedDB). Muốn mọi máy dùng bản mới: bấm
 **Tải các file .json.gz** rồi upload đè vào thư mục `data/` trên GitHub.
+
+## Làm sạch model code khỏi màu thành phẩm (BOM)
+
+Danh sách «List Product code cần chỉnh lại loại model code ra khỏi màu» được
+nhúng trong `data/deca_fix.json.gz` (gộp cả 3 sheet, cột C = Product code,
+cột E = Model code). Khi xử lý file BOM:
+
+- Product code thuộc danh sách + màu chứa đúng model code của nó →
+  **loại model code khỏi màu rồi mới điền** vào `ColorProduct`
+  (áp dụng cho cả giá trị «Màu MỚI» lấy từ chuẩn hoá).
+- Product code thuộc danh sách nhưng KHÔNG có trong chuẩn hoá TP →
+  vẫn làm sạch từ màu cũ và điền luôn (không để trống).
+- Chỉ loại model code đăng ký cho đúng product code đó — không đụng số khác.
+
+Các dòng đã làm sạch được liệt kê ở tab/sheet báo cáo «Đã làm sạch model code».
