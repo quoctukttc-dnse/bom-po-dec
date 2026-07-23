@@ -20,7 +20,7 @@
 </head>
 <body>
 <h1>Điền BOM / PO tự động</h1>
-<div class="sub">Kéo-thả file <b>BOM</b> hoặc <b>PO</b> — công cụ tự nhận diện và điền <b>Item (ScaF)</b>, <b>DSM/Model/Item</b>, <b>Specification (Artwork)</b>, rồi xuất ra đúng template. Chỉ tự điền khi khớp ĐÚNG dữ liệu đã chuẩn hóa trên PRD (mã SKU + tên màu cùng khớp); không suy đoán.</div>
+<div class="sub">Kéo-thả file <b>BOM</b> hoặc <b>PO</b> — công cụ tự nhận diện và điền <b>Item (ScaF)</b>, <b>DSM/Model/Item</b>, <b>Specification (Artwork)</b>, rồi xuất ra đúng template. Điền theo dữ liệu đã chuẩn hóa trên PRD: mã SKU trong ColorItemOld phải tồn tại trên đúng code (ưu tiên mã khớp cả tên màu).</div>
 <div id="drop">Bấm chọn hoặc kéo-thả file .xlsx vào đây<br><input type="file" id="file" accept=".xlsx,.xls" style="display:none"></div>
 <div id="log"></div>
 <div class="foot">Dữ liệu tra cứu nhúng sẵn (master 20/07/2026, gồm code sử dụng packaging). Xử lý hoàn toàn trên trình duyệt.</div>
@@ -44,18 +44,19 @@ function pickCombo(combos, artref){
   return null;
 }
 function itemLookup(item, artref){
-  // CHI dien khi khop dung du lieu da CHUAN HOA tren PRD:
-  // (1) ma SKU (>=6 chu so) ton tai tren dung code, VA
-  // (2) ten mau chuan hoa cua SKU do xuat hien trong ColorItemOld.
-  // Thieu 1 trong 2 -> khong tu dien (de trong cho kiem tra tay).
+  // Dien theo du lieu DA CHUAN HOA tren PRD: ma SKU (>=6 chu so) phai ton tai
+  // tren DUNG code do (khoa item|ma nen khong dinh nham code khac).
+  // Uu tien ma nao khop ca ten mau chuan hoa trong ColorItemOld.
   const ar=U(artref||'');
   const toks=(ar.match(/\d{6,}/g))||[];
   for(const t of toks){
     const v=byItem[item+'|'+t];
-    if(!v) continue;
-    if(v[0] && ar.indexOf(U(v[0]))>=0){
+    if(v && v[0] && ar.indexOf(U(v[0]))>=0)
       return {color:v[0],size:v[1],dsm:v[2],model:v[3],art:v[4],sku:t};
-    }
+  }
+  for(const t of toks){
+    const v=byItem[item+'|'+t];
+    if(v) return {color:v[0],size:v[1],dsm:v[2],model:v[3],art:v[4],sku:t};
   }
   return null;
 }
